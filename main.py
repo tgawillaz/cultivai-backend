@@ -1,126 +1,103 @@
-from flask import Flask, jsonify, request, make_response
-from flask_cors import CORS
+from flask import Flask, request, jsonify
+import jwt
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})
 
-@app.before_request
-def log_request_info():
-    print('Request Headers:', dict(request.headers))
-    print('Request URL:', request.url)
+# Dummy authentication function
+def authenticate(username, password):
+    return username == "user" and password == "password"
 
-@app.errorhandler(Exception)
-def handle_error(error):
-    print('Error:', str(error))
-    return jsonify({'error': str(error)}), 500
-
-@app.route('/')
-def index():
-    return """
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <title>CultivAi API 🌱</title>
-      <style>
-        body {
-          font-family: 'Segoe UI', sans-serif;
-          background: #111;
-          color: #00ff9d;
-          text-align: center;
-          padding: 4rem;
-        }
-        h1 {
-          font-size: 2.5rem;
-          margin-bottom: 0.5rem;
-        }
-        p {
-          font-size: 1.2rem;
-        }
-        code {
-          background: #222;
-          padding: 0.2rem 0.5rem;
-          border-radius: 4px;
-          color: #fff;
-        }
-      </style>
-    </head>
-    <body>
-      <h1>🌱 CultivAi Backend is Live</h1>
-      <p>Use <code>/test/ping</code> for API health checks.</p>
-      <p>More routes coming soon: <code>/api/feed</code>, <code>/api/recap</code>, <code>/tasks/cleanup</code>...</p>
-      <p>Built with 💚 by Subcool Seeds</p>
-    </body>
-    </html>
-    """
-
-@app.route('/test/ping')
-def ping():
-    return jsonify({
-        "status": "ok",
-        "message": "CultivAi backend is live!"
-    })
-
-@app.route('/api/chat', methods=['POST'])
-def chat():
-    data = request.get_json()  # Get the incoming JSON data (e.g., user's message)
+# User Login
+@app.route('/api/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
     
-    user_message = data.get('message', '')
-    
-    response = {
-        "status": "ok",
-        "message": f"Received your message: {user_message}"
-    }
-    
-    return jsonify(response)
-
-@app.route('/api/feed', methods=['POST'])
-def feed():
-    data = request.get_json()  # Get the incoming JSON data for the feed
-
-    # Placeholder: You can process the feed data and save it
-    feed_data = data.get('feed', 'No feed data provided')
-    
-    response = {
-        "status": "ok",
-        "message": "Feed data received",
-        "data": feed_data
-    }
-    
-    return jsonify(response)
-
-@app.route('/api/recap', methods=['POST'])
-def recap():
-    data = request.get_json()  # Get the incoming JSON data for the recap
-
-    recap_data = data.get('recap', 'No recap data provided')
-    
-    response = {
-        "status": "ok",
-        "message": "Recap data received",
-        "data": recap_data
-    }
-    
-    return jsonify(response)
-
-@app.route('/tasks/cleanup', methods=['POST'])
-def cleanup():
-    # Example cleanup logic
-    cleanup_success = True  # Assuming cleanup was successful
-
-    if cleanup_success:
-        response = {
-            "status": "ok",
-            "message": "Cleanup task completed successfully"
-        }
+    if authenticate(username, password):
+        token = jwt.encode({'user': username, 'exp': datetime.utcnow() + timedelta(hours=1)}, 'secret_key', algorithm='HS256')
+        return jsonify({"token": token})
     else:
-        response = {
-            "status": "error",
-            "message": "Failed to perform cleanup"
-        }
+        return jsonify({"error": "Invalid credentials"}), 401
 
-    return jsonify(response)
+# Create a new product (for Admin)
+@app.route('/api/product', methods=['POST'])
+def add_product():
+    data = request.get_json()
+    product = {
+        'name': data.get('name'),
+        'description': data.get('description'),
+        'price': data.get('price'),
+        'image': data.get('image'),
+        'stock': data.get('stock')
+    }
+    return jsonify({"message": "Product added successfully", "product": product}), 201
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+# List all products
+@app.route('/api/products', methods=['GET'])
+def get_products():
+    products = [
+        {"id": 1, "name": "Product 1", "price": 25.0, "image": "product1.jpg"},
+        {"id": 2, "name": "Product 2", "price": 40.0, "image": "product2.jpg"}
+    ]
+    return jsonify(products)
+
+# Get details of a specific product
+@app.route('/api/product/<int:id>', methods=['GET'])
+def get_product(id):
+    product = {"id": id, "name": "Product 1", "price": 25.0, "description": "Product description", "image": "product1.jpg"}
+    return jsonify(product)
+
+# Create a new order
+@app.route('/api/order', methods=['POST'])
+def place_order():
+    data = request.get_json()
+    order = {
+        'user_id': data.get('user_id'),
+        'items': data.get('items'),
+        'total': data.get('total'),
+        'shipping_address': data.get('shipping_address'),
+        'payment_status': 'Pending'
+    }
+    return jsonify({"message": "Order placed successfully", "order": order}), 201
+
+# Retrieve a specific order
+@app.route('/api/order/<int:id>', methods=['GET'])
+def get_order(id):
+    order = {"id": id, "user_id": 1, "items": [{"product_id": 1, "quantity": 2}], "total": 50.0, "shipping_address": "123 Street", "payment_status": "Pending"}
+    return jsonify(order)
+
+# Process payment for an order
+@app.route('/api/payment', methods=['POST'])
+def process_payment():
+    data = request.get_json()
+    order_id = data.get('order_id')
+    payment_status = data.get('payment_status')
+    return jsonify({"message": "Payment processed successfully", "order_id": order_id, "payment_status": payment_status}), 200
+
+# Admin Update for a product
+@app.route('/api/product/<int:id>', methods=['POST'])
+def update_product(id):
+    data = request.get_json()
+    updated_product = {
+        'name': data.get('name'),
+        'description': data.get('description'),
+        'price': data.get('price'),
+        'image': data.get('image'),
+        'stock': data.get('stock')
+    }
+    return jsonify({"message": "Product updated successfully", "product": updated_product}), 200
+
+# Get all orders of a user
+@app.route('/api/orders/user/<int:user_id>', methods=['GET'])
+def get_user_orders(user_id):
+    orders = [
+        {"order_id": 1, "status": "Shipped", "total": 100.0},
+        {"order_id": 2, "status": "Pending", "total": 50.0}
+    ]
+    return jsonify(orders)
+
+# Run the application
+if __name__ == "__main__":
+    app.run(debug=True)
