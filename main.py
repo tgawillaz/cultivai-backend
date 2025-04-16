@@ -1,23 +1,27 @@
 from flask import Flask, request, jsonify
-import jwt
+from flask_cors import CORS
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from datetime import datetime, timedelta
+import jwt as pyjwt  # still used for /verify-token
 
 app = Flask(__name__)
-SECRET_KEY = "secret_key"  # Replace with env var later
+CORS(app)
 
-# Dummy auth function
-def authenticate(username, password):
-    return username == "user" and password == "password"
+# Config
+app.config["JWT_SECRET_KEY"] = "super-secret"  # 🔐 replace with os.getenv later
+jwt = JWTManager(app)
+INTERNAL_SECRET_KEY = "secret_key"  # for legacy /verify-token
 
 # -------------------
-# 🩺 Health Check
 @app.route("/")
 @app.route("/api/health")
 def health():
     return jsonify({"status": "CultivAi backend is live"})
 
 # -------------------
-# 🔐 Login
+def authenticate(username, password):
+    return username == "user" and password == "password"
+
 @app.route('/api/login', methods=['POST'])
 def login():
     data = request.get_json()
@@ -25,50 +29,43 @@ def login():
     password = data.get('password')
 
     if authenticate(username, password):
-        token = jwt.encode(
-            {'user': username, 'exp': datetime.utcnow() + timedelta(hours=1)},
-            SECRET_KEY,
-            algorithm='HS256'
-        )
-        return jsonify({"token": token})
+        access_token = create_access_token(identity=username)
+        return jsonify({"token": access_token})
     return jsonify({"error": "Invalid credentials"}), 401
 
 # -------------------
-# 🔐 Verify Token
 @app.route('/api/verify-token', methods=['POST'])
 def verify_token():
     data = request.get_json()
     token = data.get("token")
-
     try:
-        decoded = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        decoded = pyjwt.decode(token, INTERNAL_SECRET_KEY, algorithms=["HS256"])
         return jsonify({"valid": True, "user": decoded["user"]})
-    except jwt.ExpiredSignatureError:
+    except pyjwt.ExpiredSignatureError:
         return jsonify({"valid": False, "error": "Token expired"}), 401
-    except jwt.InvalidTokenError:
+    except pyjwt.InvalidTokenError:
         return jsonify({"valid": False, "error": "Invalid token"}), 401
 
-# -------------------
-# 🔓 Dummy Logout (frontend handles it)
 @app.route('/api/logout', methods=['POST'])
 def logout():
     return jsonify({"message": "Logout successful — delete token client-side."})
 
 # -------------------
-# 🛍️ Create product
 @app.route('/api/product', methods=['POST'])
+@jwt_required()
 def add_product():
+    current_user = get_jwt_identity()
     data = request.get_json()
     product = {
         'name': data.get('name'),
         'description': data.get('description'),
         'price': data.get('price'),
         'image': data.get('image'),
-        'stock': data.get('stock')
+        'stock': data.get('stock'),
+        'created_by': current_user
     }
     return jsonify({"message": "Product added successfully", "product": product}), 201
 
-# 🔍 Get all products
 @app.route('/api/products', methods=['GET'])
 def get_products():
     products = [
@@ -77,45 +74,47 @@ def get_products():
     ]
     return jsonify(products)
 
-# 🔍 Get one product
 @app.route('/api/product/<int:id>', methods=['GET'])
 def get_product(id):
     product = {"id": id, "name": "Product 1", "price": 25.0, "description": "Product description", "image": "product1.jpg"}
     return jsonify(product)
 
-# 🛠️ Update product
 @app.route('/api/product/<int:id>', methods=['POST'])
+@jwt_required()
 def update_product(id):
+    current_user = get_jwt_identity()
     data = request.get_json()
     updated_product = {
         'name': data.get('name'),
         'description': data.get('description'),
         'price': data.get('price'),
         'image': data.get('image'),
-        'stock': data.get('stock')
+        'stock': data.get('stock'),
+        'updated_by': current_user
     }
     return jsonify({"message": "Product updated successfully", "product": updated_product}), 200
 
-# 📦 Create order
+# -------------------
 @app.route('/api/order', methods=['POST'])
+@jwt_required()
 def place_order():
+    current_user = get_jwt_identity()
     data = request.get_json()
     order = {
         'user_id': data.get('user_id'),
         'items': data.get('items'),
         'total': data.get('total'),
         'shipping_address': data.get('shipping_address'),
-        'payment_status': 'Pending'
+        'payment_status': 'Pending',
+        'placed_by': current_user
     }
     return jsonify({"message": "Order placed successfully", "order": order}), 201
 
-# 🔍 Get one order
 @app.route('/api/order/<int:id>', methods=['GET'])
 def get_order(id):
     order = {"id": id, "user_id": 1, "items": [{"product_id": 1, "quantity": 2}], "total": 50.0, "shipping_address": "123 Street", "payment_status": "Pending"}
     return jsonify(order)
 
-# 🧾 Get user’s orders
 @app.route('/api/orders/user/<int:user_id>', methods=['GET'])
 def get_user_orders(user_id):
     orders = [
@@ -124,15 +123,21 @@ def get_user_orders(user_id):
     ]
     return jsonify(orders)
 
-# 💳 Payment update
+# -------------------
 @app.route('/api/payment', methods=['POST'])
+@jwt_required()
 def process_payment():
+    current_user = get_jwt_identity()
     data = request.get_json()
     order_id = data.get('order_id')
     payment_status = data.get('payment_status')
-    return jsonify({"message": "Payment processed successfully", "order_id": order_id, "payment_status": payment_status}), 200
+    return jsonify({
+        "message": "Payment processed successfully",
+        "order_id": order_id,
+        "payment_status": payment_status,
+        "processed_by": current_user
+    }), 200
 
 # -------------------
-# 🏁 Run the app locally
 if __name__ == "__main__":
     app.run(debug=True)
