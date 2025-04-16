@@ -79,6 +79,20 @@ def ping():
         "message": "CultivAi backend is live!"
     })
 
+@app.route('/api/chat', methods=['POST'])
+def chat():
+    data = request.get_json()  # Get the incoming JSON data (e.g., user's message)
+    
+    # Placeholder logic for chat response, modify with your chatbot logic
+    user_message = data.get('message', '')
+    
+    # Example response, you would replace this with actual chatbot interaction
+    response = {
+        "status": "ok",
+        "message": f"Received your message: {user_message}"
+    }
+    
+    return jsonify(response)
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
-# Placeholder for app.py
