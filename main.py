@@ -118,6 +118,16 @@ def update_product(id):
         return jsonify({"message": "Product updated successfully", "product": product}), 200
     return jsonify({"error": "Product not found"}), 404
 
+@app.route('/api/product/<int:id>', methods=['DELETE'])
+@admin_required
+def delete_product(id):
+    global products
+    original_len = len(products)
+    products = [p for p in products if p["id"] != id]
+    if len(products) < original_len:
+        return jsonify({"message": f"Product {id} deleted successfully"}), 200
+    return jsonify({"error": "Product not found"}), 404
+
 @app.route('/api/order', methods=['POST'])
 @jwt_required()
 def place_order():
@@ -149,6 +159,21 @@ def get_order(id):
 def get_user_orders(user_id):
     user_orders = [o for o in orders if o["user_id"] == user_id]
     return jsonify(user_orders)
+
+@app.route('/api/order/<int:id>', methods=['DELETE'])
+@jwt_required()
+def delete_order(id):
+    global orders
+    current_user = get_jwt_identity()
+    order = next((o for o in orders if o["id"] == id), None)
+    if not order:
+        return jsonify({"error": "Order not found"}), 404
+
+    if current_user["role"] != "admin" and order["placed_by"] != current_user["username"]:
+        return jsonify({"error": "Unauthorized"}), 403
+
+    orders.remove(order)
+    return jsonify({"message": f"Order {id} deleted successfully"}), 200
 
 @app.route('/api/payment', methods=['POST'])
 @jwt_required()
