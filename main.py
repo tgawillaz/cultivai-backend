@@ -142,6 +142,31 @@ def place_order():
     order_id_counter += 1
     return jsonify({"message": "Order placed successfully", "order": order}), 201
 
+@app.route('/api/payment-confirmation', methods=['POST'])
+@jwt_required()
+def confirm_payment():
+    data = request.get_json()
+    current_user = get_jwt_identity()["username"]
+    order_id = data.get("order_id")
+    screenshot_url = data.get("screenshot_url")
+    method = data.get("payment_method")
+
+    order = next((o for o in orders if o["id"] == order_id), None)
+    if not order:
+        return jsonify({"error": "Order not found"}), 404
+
+    if order["placed_by"] != current_user and get_jwt_identity()["role"] != "admin":
+        return jsonify({"error": "Unauthorized"}), 403
+
+    order["payment_confirmation"] = {
+        "screenshot_url": screenshot_url,
+        "method": method,
+        "submitted_at": datetime.utcnow().isoformat()
+    }
+    order["payment_status"] = "Under Review"
+
+    return jsonify({"message": "Payment confirmation submitted", "order": order}), 200
+
 @app.route('/api/order/<int:id>', methods=['GET'])
 def get_order(id):
     order = next((o for o in orders if o["id"] == id), None)
@@ -187,31 +212,6 @@ def process_payment():
         }), 200
     return jsonify({"error": "Order not found"}), 404
 
-@app.route('/api/payment-confirmation', methods=['POST'])
-@jwt_required()
-def confirm_payment():
-    data = request.get_json()
-    current_user = get_jwt_identity()["username"]
-    order_id = data.get("order_id")
-    screenshot_url = data.get("screenshot_url")
-    method = data.get("payment_method")
-
-    order = next((o for o in orders if o["id"] == order_id), None)
-    if not order:
-        return jsonify({"error": "Order not found"}), 404
-
-    if order["placed_by"] != current_user and get_jwt_identity()["role"] != "admin":
-        return jsonify({"error": "Unauthorized"}), 403
-
-    order["payment_confirmation"] = {
-        "screenshot_url": screenshot_url,
-        "method": method,
-        "submitted_at": datetime.utcnow().isoformat()
-    }
-    order["payment_status"] = "Under Review"
-
-    return jsonify({"message": "Payment confirmation submitted", "order": order}), 200
-
 @app.route('/api/reset', methods=['GET'])
 @admin_required
 def reset_data():
@@ -229,6 +229,24 @@ def export_data():
         "products": products,
         "orders": orders
     }), 200
+
+@app.route('/api/orders/unpaid', methods=['GET'])
+@admin_required
+def get_unpaid_orders():
+    unpaid = [o for o in orders if o["payment_status"] == "Pending"]
+    return jsonify({"unpaid_orders": unpaid}), 200
+
+@app.route('/api/order/<int:id>/cancel', methods=['POST'])
+@admin_required
+def cancel_order(id):
+    order = next((o for o in orders if o["id"] == id), None)
+    if not order:
+        return jsonify({"error": "Order not found"}), 404
+    if order["payment_status"] != "Pending":
+        return jsonify({"error": "Only pending orders can be canceled"}), 400
+    order["payment_status"] = "Canceled"
+    order["canceled_at"] = datetime.utcnow().isoformat()
+    return jsonify({"message": f"Order {id} canceled", "order": order}), 200
 
 if __name__ == "__main__":
     app.run(debug=True)
