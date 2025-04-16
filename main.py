@@ -3,25 +3,59 @@ import jwt
 from datetime import datetime, timedelta
 
 app = Flask(__name__)
+SECRET_KEY = "secret_key"  # Replace with env var later
 
-# Dummy authentication function
+# Dummy auth function
 def authenticate(username, password):
     return username == "user" and password == "password"
 
-# User Login
+# -------------------
+# 🩺 Health Check
+@app.route("/")
+@app.route("/api/health")
+def health():
+    return jsonify({"status": "CultivAi backend is live"})
+
+# -------------------
+# 🔐 Login
 @app.route('/api/login', methods=['POST'])
 def login():
     data = request.get_json()
     username = data.get('username')
     password = data.get('password')
-    
-    if authenticate(username, password):
-        token = jwt.encode({'user': username, 'exp': datetime.utcnow() + timedelta(hours=1)}, 'secret_key', algorithm='HS256')
-        return jsonify({"token": token})
-    else:
-        return jsonify({"error": "Invalid credentials"}), 401
 
-# Create a new product (for Admin)
+    if authenticate(username, password):
+        token = jwt.encode(
+            {'user': username, 'exp': datetime.utcnow() + timedelta(hours=1)},
+            SECRET_KEY,
+            algorithm='HS256'
+        )
+        return jsonify({"token": token})
+    return jsonify({"error": "Invalid credentials"}), 401
+
+# -------------------
+# 🔐 Verify Token
+@app.route('/api/verify-token', methods=['POST'])
+def verify_token():
+    data = request.get_json()
+    token = data.get("token")
+
+    try:
+        decoded = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        return jsonify({"valid": True, "user": decoded["user"]})
+    except jwt.ExpiredSignatureError:
+        return jsonify({"valid": False, "error": "Token expired"}), 401
+    except jwt.InvalidTokenError:
+        return jsonify({"valid": False, "error": "Invalid token"}), 401
+
+# -------------------
+# 🔓 Dummy Logout (frontend handles it)
+@app.route('/api/logout', methods=['POST'])
+def logout():
+    return jsonify({"message": "Logout successful — delete token client-side."})
+
+# -------------------
+# 🛍️ Create product
 @app.route('/api/product', methods=['POST'])
 def add_product():
     data = request.get_json()
@@ -34,7 +68,7 @@ def add_product():
     }
     return jsonify({"message": "Product added successfully", "product": product}), 201
 
-# List all products
+# 🔍 Get all products
 @app.route('/api/products', methods=['GET'])
 def get_products():
     products = [
@@ -43,40 +77,13 @@ def get_products():
     ]
     return jsonify(products)
 
-# Get details of a specific product
+# 🔍 Get one product
 @app.route('/api/product/<int:id>', methods=['GET'])
 def get_product(id):
     product = {"id": id, "name": "Product 1", "price": 25.0, "description": "Product description", "image": "product1.jpg"}
     return jsonify(product)
 
-# Create a new order
-@app.route('/api/order', methods=['POST'])
-def place_order():
-    data = request.get_json()
-    order = {
-        'user_id': data.get('user_id'),
-        'items': data.get('items'),
-        'total': data.get('total'),
-        'shipping_address': data.get('shipping_address'),
-        'payment_status': 'Pending'
-    }
-    return jsonify({"message": "Order placed successfully", "order": order}), 201
-
-# Retrieve a specific order
-@app.route('/api/order/<int:id>', methods=['GET'])
-def get_order(id):
-    order = {"id": id, "user_id": 1, "items": [{"product_id": 1, "quantity": 2}], "total": 50.0, "shipping_address": "123 Street", "payment_status": "Pending"}
-    return jsonify(order)
-
-# Process payment for an order
-@app.route('/api/payment', methods=['POST'])
-def process_payment():
-    data = request.get_json()
-    order_id = data.get('order_id')
-    payment_status = data.get('payment_status')
-    return jsonify({"message": "Payment processed successfully", "order_id": order_id, "payment_status": payment_status}), 200
-
-# Admin Update for a product
+# 🛠️ Update product
 @app.route('/api/product/<int:id>', methods=['POST'])
 def update_product(id):
     data = request.get_json()
@@ -89,7 +96,26 @@ def update_product(id):
     }
     return jsonify({"message": "Product updated successfully", "product": updated_product}), 200
 
-# Get all orders of a user
+# 📦 Create order
+@app.route('/api/order', methods=['POST'])
+def place_order():
+    data = request.get_json()
+    order = {
+        'user_id': data.get('user_id'),
+        'items': data.get('items'),
+        'total': data.get('total'),
+        'shipping_address': data.get('shipping_address'),
+        'payment_status': 'Pending'
+    }
+    return jsonify({"message": "Order placed successfully", "order": order}), 201
+
+# 🔍 Get one order
+@app.route('/api/order/<int:id>', methods=['GET'])
+def get_order(id):
+    order = {"id": id, "user_id": 1, "items": [{"product_id": 1, "quantity": 2}], "total": 50.0, "shipping_address": "123 Street", "payment_status": "Pending"}
+    return jsonify(order)
+
+# 🧾 Get user’s orders
 @app.route('/api/orders/user/<int:user_id>', methods=['GET'])
 def get_user_orders(user_id):
     orders = [
@@ -98,6 +124,15 @@ def get_user_orders(user_id):
     ]
     return jsonify(orders)
 
-# Run the application
+# 💳 Payment update
+@app.route('/api/payment', methods=['POST'])
+def process_payment():
+    data = request.get_json()
+    order_id = data.get('order_id')
+    payment_status = data.get('payment_status')
+    return jsonify({"message": "Payment processed successfully", "order_id": order_id, "payment_status": payment_status}), 200
+
+# -------------------
+# 🏁 Run the app locally
 if __name__ == "__main__":
     app.run(debug=True)
