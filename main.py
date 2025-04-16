@@ -2,15 +2,36 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from datetime import datetime, timedelta
-import jwt as pyjwt  # still used for /verify-token
+import jwt as pyjwt
 
 app = Flask(__name__)
 CORS(app)
 
 # Config
-app.config["JWT_SECRET_KEY"] = "super-secret"  # 🔐 replace with os.getenv later
+app.config["JWT_SECRET_KEY"] = "super-secret"
 jwt = JWTManager(app)
-INTERNAL_SECRET_KEY = "secret_key"  # for legacy /verify-token
+INTERNAL_SECRET_KEY = "secret_key"  # legacy /verify-token
+
+# Dummy users with roles
+USERS = {
+    "user": {"password": "password", "role": "user"},
+    "admin": {"password": "adminpass", "role": "admin"}
+}
+
+# Auth helpers
+def authenticate(username, password):
+    user = USERS.get(username)
+    return user and user["password"] == password
+
+def admin_required(fn):
+    @jwt_required()
+    def wrapper(*args, **kwargs):
+        identity = get_jwt_identity()
+        if identity["role"] != "admin":
+            return jsonify({"error": "Admin access required"}), 403
+        return fn(*args, **kwargs)
+    wrapper.__name__ = fn.__name__
+    return wrapper
 
 # -------------------
 @app.route("/")
@@ -18,22 +39,19 @@ INTERNAL_SECRET_KEY = "secret_key"  # for legacy /verify-token
 def health():
     return jsonify({"status": "CultivAi backend is live"})
 
-# -------------------
-def authenticate(username, password):
-    return username == "user" and password == "password"
-
 @app.route('/api/login', methods=['POST'])
 def login():
     data = request.get_json()
     username = data.get('username')
     password = data.get('password')
 
-    if authenticate(username, password):
-        access_token = create_access_token(identity=username)
+    user = USERS.get(username)
+    if user and user["password"] == password:
+        access_token = create_access_token(identity={"username": username, "role": user["role"]})
         return jsonify({"token": access_token})
+    
     return jsonify({"error": "Invalid credentials"}), 401
 
-# -------------------
 @app.route('/api/verify-token', methods=['POST'])
 def verify_token():
     data = request.get_json()
@@ -52,9 +70,9 @@ def logout():
 
 # -------------------
 @app.route('/api/product', methods=['POST'])
-@jwt_required()
+@admin_required
 def add_product():
-    current_user = get_jwt_identity()
+    current_user = get_jwt_identity()["username"]
     data = request.get_json()
     product = {
         'name': data.get('name'),
@@ -80,9 +98,9 @@ def get_product(id):
     return jsonify(product)
 
 @app.route('/api/product/<int:id>', methods=['POST'])
-@jwt_required()
+@admin_required
 def update_product(id):
-    current_user = get_jwt_identity()
+    current_user = get_jwt_identity()["username"]
     data = request.get_json()
     updated_product = {
         'name': data.get('name'),
@@ -98,7 +116,7 @@ def update_product(id):
 @app.route('/api/order', methods=['POST'])
 @jwt_required()
 def place_order():
-    current_user = get_jwt_identity()
+    current_user = get_jwt_identity()["username"]
     data = request.get_json()
     order = {
         'user_id': data.get('user_id'),
@@ -123,11 +141,10 @@ def get_user_orders(user_id):
     ]
     return jsonify(orders)
 
-# -------------------
 @app.route('/api/payment', methods=['POST'])
 @jwt_required()
 def process_payment():
-    current_user = get_jwt_identity()
+    current_user = get_jwt_identity()["username"]
     data = request.get_json()
     order_id = data.get('order_id')
     payment_status = data.get('payment_status')
