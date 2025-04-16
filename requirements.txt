@@ -1,5 +1,5 @@
 gunicorn==23.0.0
 Flask>=2.0.0
 requests
-from flask_cors import CORS
+flask-cors
 
