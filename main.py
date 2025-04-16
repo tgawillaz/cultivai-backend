@@ -1,25 +1,8 @@
 from flask import Flask, jsonify, request, make_response
 from flask_cors import CORS
 
-# Import any blueprints or services you're using (optional)
-# from api.moderation import moderation_api
-# from api.feed import recap_api
-# from api.comments import comments_api
-# from api.recap import recap_routes
-# from services.recap_webhooks import run_webhook_worker
-# from threading import Thread
-
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
-
-# Optionally register blueprints (if you're using them)
-# app.register_blueprint(moderation_api)
-# app.register_blueprint(recap_api)
-# app.register_blueprint(comments_api)
-# app.register_blueprint(recap_routes)
-
-# Optionally run background services (like webhook queues)
-# Thread(target=run_webhook_worker).start()
 
 @app.before_request
 def log_request_info():
@@ -81,36 +64,41 @@ def ping():
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
-    data = request.get_json()  # Get the incoming JSON data (e.g., user's message)
-    
-    # Placeholder logic for chat response, modify with your chatbot logic
+    data = request.get_json()
     user_message = data.get('message', '')
-    
-    # Example response, you would replace this with actual chatbot interaction
     response = {
         "status": "ok",
         "message": f"Received your message: {user_message}"
     }
-    
     return jsonify(response)
 
 @app.route('/api/feed', methods=['POST'])
-def post_feed():
-    data = request.get_json()  # Get the incoming JSON data
-    
-    # Example feed data, you would add actual feed logic here
-    feed_item = {
-        "feed_id": data.get("feed_id", "No ID provided"),
-        "title": data.get("title", "No title provided"),
-        "content": data.get("content", "No content provided")
-    }
-    
-    # Return a JSON response with the received feed data
-    return jsonify({
+def feed():
+    data = request.get_json()
+    feed_item = data.get('item', '')
+    response = {
         "status": "ok",
-        "message": "Feed item received",
-        "data": feed_item
-    }), 200
+        "message": f"Received feed item: {feed_item}"
+    }
+    return jsonify(response)
+
+@app.route('/api/recap', methods=['POST'])
+def recap():
+    data = request.get_json()
+    recap_id = data.get('recap_id', '')
+    summary = data.get('summary', '')
+    date = data.get('date', '')
+
+    response = {
+        "status": "ok",
+        "message": "Recap data received",
+        "data": {
+            "recap_id": recap_id,
+            "summary": summary,
+            "date": date
+        }
+    }
+    return jsonify(response)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
