@@ -64,40 +64,62 @@ def ping():
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
-    data = request.get_json()
+    data = request.get_json()  # Get the incoming JSON data (e.g., user's message)
+    
     user_message = data.get('message', '')
+    
     response = {
         "status": "ok",
         "message": f"Received your message: {user_message}"
     }
+    
     return jsonify(response)
 
 @app.route('/api/feed', methods=['POST'])
 def feed():
-    data = request.get_json()
-    feed_item = data.get('item', '')
+    data = request.get_json()  # Get the incoming JSON data for the feed
+
+    # Placeholder: You can process the feed data and save it
+    feed_data = data.get('feed', 'No feed data provided')
+    
     response = {
         "status": "ok",
-        "message": f"Received feed item: {feed_item}"
+        "message": "Feed data received",
+        "data": feed_data
     }
+    
     return jsonify(response)
 
 @app.route('/api/recap', methods=['POST'])
 def recap():
-    data = request.get_json()
-    recap_id = data.get('recap_id', '')
-    summary = data.get('summary', '')
-    date = data.get('date', '')
+    data = request.get_json()  # Get the incoming JSON data for the recap
 
+    recap_data = data.get('recap', 'No recap data provided')
+    
     response = {
         "status": "ok",
         "message": "Recap data received",
-        "data": {
-            "recap_id": recap_id,
-            "summary": summary,
-            "date": date
-        }
+        "data": recap_data
     }
+    
+    return jsonify(response)
+
+@app.route('/tasks/cleanup', methods=['POST'])
+def cleanup():
+    # Example cleanup logic
+    cleanup_success = True  # Assuming cleanup was successful
+
+    if cleanup_success:
+        response = {
+            "status": "ok",
+            "message": "Cleanup task completed successfully"
+        }
+    else:
+        response = {
+            "status": "error",
+            "message": "Failed to perform cleanup"
+        }
+
     return jsonify(response)
 
 if __name__ == '__main__':
