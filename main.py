@@ -1,25 +1,8 @@
 from flask import Flask, jsonify, request, make_response
 from flask_cors import CORS
 
-# Import any blueprints or services you're using (optional)
-# from api.moderation import moderation_api
-# from api.feed import recap_api
-# from api.comments import comments_api
-# from api.recap import recap_routes
-# from services.recap_webhooks import run_webhook_worker
-# from threading import Thread
-
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
-
-# Optionally register blueprints (if you're using them)
-# app.register_blueprint(moderation_api)
-# app.register_blueprint(recap_api)
-# app.register_blueprint(comments_api)
-# app.register_blueprint(recap_routes)
-
-# Optionally run background services (like webhook queues)
-# Thread(target=run_webhook_worker).start()
 
 @app.before_request
 def log_request_info():
@@ -79,29 +62,28 @@ def ping():
         "message": "CultivAi backend is live!"
     })
 
-@app.route('/api/feed', methods=['GET'])
+@app.route('/api/feed')
 def feed():
-    # Placeholder logic for the feed API, modify with your feed data
-    response = {
+    return jsonify({
         "status": "ok",
         "message": "Feed data coming soon!"
-    }
-    return jsonify(response)
+    })
 
-@app.route('/api/chat', methods=['POST'])
-def chat():
-    data = request.get_json()  # Get the incoming JSON data (e.g., user's message)
-    
-    # Placeholder logic for chat response, modify with your chatbot logic
-    user_message = data.get('message', '')
-    
-    # Example response, you would replace this with actual chatbot interaction
-    response = {
+@app.route('/api/recap')
+def recap():
+    # Return some mock data for recap
+    return jsonify({
         "status": "ok",
-        "message": f"Received your message: {user_message}"
-    }
-    
-    return jsonify(response)
+        "message": "Recap data coming soon!"
+    })
+
+@app.route('/tasks/cleanup')
+def cleanup():
+    # Placeholder for a cleanup task
+    return jsonify({
+        "status": "ok",
+        "message": "Cleanup task running..."
+    })
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
