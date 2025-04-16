@@ -193,5 +193,23 @@ def process_payment():
         }), 200
     return jsonify({"error": "Order not found"}), 404
 
+@app.route('/api/reset', methods=['GET'])
+@admin_required
+def reset_data():
+    global products, orders, product_id_counter, order_id_counter
+    products = []
+    orders = []
+    product_id_counter = 1
+    order_id_counter = 1
+    return jsonify({"message": "All data reset successfully"}), 200
+
+@app.route('/api/export', methods=['GET'])
+@admin_required
+def export_data():
+    return jsonify({
+        "products": products,
+        "orders": orders
+    }), 200
+
 if __name__ == "__main__":
     app.run(debug=True)
