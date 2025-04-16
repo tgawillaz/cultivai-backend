@@ -94,32 +94,23 @@ def chat():
     
     return jsonify(response)
 
-@app.route('/api/feed', methods=['GET'])
-def feed():
-    # Example response for /api/feed
-    response = {
-        "status": "ok",
-        "data": [
-            {"feed_id": 1, "title": "Feed Item 1", "content": "Example content for feed item 1"},
-            {"feed_id": 2, "title": "Feed Item 2", "content": "Example content for feed item 2"}
-        ]
-    }
-    return jsonify(response)
-
-@app.route('/api/recap', methods=['POST'])
-def recap():
-    data = request.get_json()  # Get the incoming JSON data (recap entry)
-
-    # Example of processing the recap entry (adjust based on real application logic)
-    recap_entry = data.get('recap_entry', 'No content provided')
+@app.route('/api/feed', methods=['POST'])
+def post_feed():
+    data = request.get_json()  # Get the incoming JSON data
     
-    # Create a response with recap data
-    response = {
-        "status": "ok",
-        "message": f"Recap entry received: {recap_entry}"
+    # Example feed data, you would add actual feed logic here
+    feed_item = {
+        "feed_id": data.get("feed_id", "No ID provided"),
+        "title": data.get("title", "No title provided"),
+        "content": data.get("content", "No content provided")
     }
-
-    return jsonify(response)
+    
+    # Return a JSON response with the received feed data
+    return jsonify({
+        "status": "ok",
+        "message": "Feed item received",
+        "data": feed_item
+    }), 200
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
