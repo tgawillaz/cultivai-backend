@@ -1,1 +1,4 @@
-# Placeholder for requirements.txt
+gunicorn==23.0.0
+Flask>=2.0.0
+requests
+
