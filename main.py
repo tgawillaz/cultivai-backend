@@ -53,18 +53,6 @@ def login():
         return jsonify({"token": access_token})
     return jsonify({"error": "Invalid credentials"}), 401
 
-@app.route('/api/verify-token', methods=['POST'])
-def verify_token():
-    data = request.get_json()
-    token = data.get("token")
-    try:
-        decoded = pyjwt.decode(token, INTERNAL_SECRET_KEY, algorithms=["HS256"])
-        return jsonify({"valid": True, "user": decoded["user"]})
-    except pyjwt.ExpiredSignatureError:
-        return jsonify({"valid": False, "error": "Token expired"}), 401
-    except pyjwt.InvalidTokenError:
-        return jsonify({"valid": False, "error": "Invalid token"}), 401
-
 @app.route('/api/logout', methods=['POST'])
 def logout():
     return jsonify({"message": "Logout successful — delete token client-side."})
@@ -139,8 +127,14 @@ def place_order():
         "user_id": data.get("user_id"),
         "items": data.get("items"),
         "total": data.get("total"),
-        "shipping_address": data.get("shipping_address"),
+        "shipping": {
+            "name": data.get("shipping", {}).get("name"),
+            "email": data.get("shipping", {}).get("email"),
+            "phone": data.get("shipping", {}).get("phone"),
+            "address": data.get("shipping", {}).get("address")
+        },
         "payment_status": "Pending",
+        "payment_confirmation": None,
         "placed_by": current_user,
         "created_at": datetime.utcnow().isoformat()
     }
@@ -192,6 +186,31 @@ def process_payment():
             "payment_status": payment_status
         }), 200
     return jsonify({"error": "Order not found"}), 404
+
+@app.route('/api/payment-confirmation', methods=['POST'])
+@jwt_required()
+def confirm_payment():
+    data = request.get_json()
+    current_user = get_jwt_identity()["username"]
+    order_id = data.get("order_id")
+    screenshot_url = data.get("screenshot_url")
+    method = data.get("payment_method")
+
+    order = next((o for o in orders if o["id"] == order_id), None)
+    if not order:
+        return jsonify({"error": "Order not found"}), 404
+
+    if order["placed_by"] != current_user and get_jwt_identity()["role"] != "admin":
+        return jsonify({"error": "Unauthorized"}), 403
+
+    order["payment_confirmation"] = {
+        "screenshot_url": screenshot_url,
+        "method": method,
+        "submitted_at": datetime.utcnow().isoformat()
+    }
+    order["payment_status"] = "Under Review"
+
+    return jsonify({"message": "Payment confirmation submitted", "order": order}), 200
 
 @app.route('/api/reset', methods=['GET'])
 @admin_required
