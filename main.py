@@ -1,19 +1,10 @@
-from flask import Flask, jsonify, request, make_response
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-@app.before_request
-def log_request_info():
-    print('Request Headers:', dict(request.headers))
-    print('Request URL:', request.url)
-
-@app.errorhandler(Exception)
-def handle_error(error):
-    print('Error:', str(error))
-    return jsonify({'error': str(error)}), 500
-
+# Home route
 @app.route('/')
 def index():
     return """
@@ -23,28 +14,6 @@ def index():
       <meta charset="UTF-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1.0" />
       <title>CultivAi API 🌱</title>
-      <style>
-        body {
-          font-family: 'Segoe UI', sans-serif;
-          background: #111;
-          color: #00ff9d;
-          text-align: center;
-          padding: 4rem;
-        }
-        h1 {
-          font-size: 2.5rem;
-          margin-bottom: 0.5rem;
-        }
-        p {
-          font-size: 1.2rem;
-        }
-        code {
-          background: #222;
-          padding: 0.2rem 0.5rem;
-          border-radius: 4px;
-          color: #fff;
-        }
-      </style>
     </head>
     <body>
       <h1>🌱 CultivAi Backend is Live</h1>
@@ -55,6 +24,7 @@ def index():
     </html>
     """
 
+# Health check route
 @app.route('/test/ping')
 def ping():
     return jsonify({
@@ -62,28 +32,21 @@ def ping():
         "message": "CultivAi backend is live!"
     })
 
-@app.route('/api/feed')
-def feed():
-    return jsonify({
+# Chat route
+@app.route('/api/chat', methods=['POST'])
+def chat():
+    data = request.get_json()  # Get the incoming JSON data (e.g., user's message)
+    
+    user_message = data.get('message', '')
+    
+    # Placeholder response - replace with actual chat logic
+    response = {
         "status": "ok",
-        "message": "Feed data coming soon!"
-    })
+        "message": f"Received your message: {user_message}"
+    }
+    
+    return jsonify(response)
 
-@app.route('/api/recap')
-def recap():
-    # Return some mock data for recap
-    return jsonify({
-        "status": "ok",
-        "message": "Recap data coming soon!"
-    })
-
-@app.route('/tasks/cleanup')
-def cleanup():
-    # Placeholder for a cleanup task
-    return jsonify({
-        "status": "ok",
-        "message": "Cleanup task running..."
-    })
-
+# Running the app
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
