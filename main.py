@@ -1,7 +1,7 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
-from datetime import datetime
+from datetime import datetime, timedelta
 import jwt as pyjwt
 
 app = Flask(__name__)
@@ -17,7 +17,6 @@ orders = []
 product_id_counter = 1
 order_id_counter = 1
 
-# Dummy users
 USERS = {
     "user": {"password": "password", "role": "user"},
     "admin": {"password": "adminpass", "role": "admin"}
@@ -247,6 +246,20 @@ def cancel_order(id):
     order["payment_status"] = "Canceled"
     order["canceled_at"] = datetime.utcnow().isoformat()
     return jsonify({"message": f"Order {id} canceled", "order": order}), 200
+
+@app.route('/api/cron/cancel-stale-orders', methods=['GET'])
+@admin_required
+def cancel_stale_orders():
+    now = datetime.utcnow()
+    expired = 0
+    for order in orders:
+        if order["payment_status"] == "Pending":
+            created_time = datetime.fromisoformat(order["created_at"])
+            if now - created_time > timedelta(hours=1):
+                order["payment_status"] = "Canceled"
+                order["canceled_at"] = now.isoformat()
+                expired += 1
+    return jsonify({"message": f"{expired} stale orders canceled"}), 200
 
 if __name__ == "__main__":
     app.run(debug=True)
