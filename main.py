@@ -79,6 +79,15 @@ def ping():
         "message": "CultivAi backend is live!"
     })
 
+@app.route('/api/feed', methods=['GET'])
+def feed():
+    # Placeholder logic for the feed API, modify with your feed data
+    response = {
+        "status": "ok",
+        "message": "Feed data coming soon!"
+    }
+    return jsonify(response)
+
 @app.route('/api/chat', methods=['POST'])
 def chat():
     data = request.get_json()  # Get the incoming JSON data (e.g., user's message)
