@@ -1,8 +1,25 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, make_response
 from flask_cors import CORS
+
+# Import any blueprints or services you're using (optional)
+# from api.moderation import moderation_api
+# from api.feed import recap_api
+# from api.comments import comments_api
+# from api.recap import recap_routes
+# from services.recap_webhooks import run_webhook_worker
+# from threading import Thread
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
+
+# Optionally register blueprints (if you're using them)
+# app.register_blueprint(moderation_api)
+# app.register_blueprint(recap_api)
+# app.register_blueprint(comments_api)
+# app.register_blueprint(recap_routes)
+
+# Optionally run background services (like webhook queues)
+# Thread(target=run_webhook_worker).start()
 
 @app.before_request
 def log_request_info():
@@ -77,18 +94,29 @@ def chat():
     
     return jsonify(response)
 
-# Implementing /api/feed Route
-@app.route('/api/feed', methods=['POST'])
+@app.route('/api/feed', methods=['GET'])
 def feed():
-    data = request.get_json()  # Get the incoming JSON data (feed entry)
-
-    # Example of processing the feed entry (adjust based on real application logic)
-    feed_entry = data.get('feed_entry', 'No content provided')
-    
-    # Create a response with feed data
+    # Example response for /api/feed
     response = {
         "status": "ok",
-        "message": f"Feed entry received: {feed_entry}"
+        "data": [
+            {"feed_id": 1, "title": "Feed Item 1", "content": "Example content for feed item 1"},
+            {"feed_id": 2, "title": "Feed Item 2", "content": "Example content for feed item 2"}
+        ]
+    }
+    return jsonify(response)
+
+@app.route('/api/recap', methods=['POST'])
+def recap():
+    data = request.get_json()  # Get the incoming JSON data (recap entry)
+
+    # Example of processing the recap entry (adjust based on real application logic)
+    recap_entry = data.get('recap_entry', 'No content provided')
+    
+    # Create a response with recap data
+    response = {
+        "status": "ok",
+        "message": f"Recap entry received: {recap_entry}"
     }
 
     return jsonify(response)
