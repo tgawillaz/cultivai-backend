@@ -26,10 +26,6 @@ USERS = {
 
 ALLOWED_PAYMENT_METHODS = ["CashApp", "Venmo", "PayPal"]
 
-def authenticate(username, password):
-    user = USERS.get(username)
-    return user and user["password"] == password
-
 def admin_required(fn):
     @jwt_required()
     def wrapper(*args, **kwargs):
@@ -106,6 +102,30 @@ def create_order():
     orders.append(order)
     order_id_counter += 1
     return jsonify({"message": "Order placed successfully", "order": order}), 201
+
+@app.route('/api/me/orders', methods=['GET'])
+@jwt_required()
+def get_my_orders():
+    user = get_jwt_identity()["username"]
+    user_orders = [o for o in orders if o["placed_by"] == user]
+    return jsonify(user_orders)
+
+@app.route('/api/order/<int:order_id>/status-history', methods=['GET'])
+@jwt_required()
+def get_status_history(order_id):
+    order = next((o for o in orders if o["id"] == order_id), None)
+    if not order:
+        return jsonify({"error": "Order not found"}), 404
+    return jsonify(order.get("status_history", []))
+
+@app.route('/api/orders', methods=['GET'])
+@admin_required
+def get_all_orders():
+    status_filter = request.args.get("status")
+    if status_filter:
+        filtered = [o for o in orders if o["payment_status"] == status_filter]
+        return jsonify(filtered)
+    return jsonify(orders)
 
 @app.route('/api/payment-confirmation', methods=['POST'])
 @jwt_required()
@@ -186,26 +206,6 @@ def order_receipt(order_id):
         return jsonify({"error": "Order not found"}), 404
     return jsonify({"receipt": order}), 200
 
-@app.route('/api/orders', methods=['GET'])
-@admin_required
-def get_all_orders():
-    return jsonify(orders)
-
-@app.route('/api/export', methods=['GET'])
-@admin_required
-def export_data():
-    return jsonify({"products": products, "orders": orders})
-
-@app.route('/api/reset', methods=['GET'])
-@admin_required
-def reset_data():
-    global products, orders, product_id_counter, order_id_counter
-    products = []
-    orders = []
-    product_id_counter = 1
-    order_id_counter = 1
-    return jsonify({"message": "All data reset successfully"})
-
 @app.route('/api/order/<int:order_id>/status', methods=['PATCH'])
 @admin_required
 def update_order_status(order_id):
@@ -224,6 +224,51 @@ def update_order_status(order_id):
     print(f"[Alert] Order {order_id} manually updated to: {new_status}")
     return jsonify({"message": f"Order {order_id} updated", "order": order}), 200
 
+@app.route('/api/webhook/order-status', methods=['POST'])
+@admin_required
+def webhook_status():
+    data = request.get_json()
+    print(f"[Webhook] Order Status Changed: {data}")
+    return jsonify({"message": "Webhook received"}), 200
+
+@app.route('/api/dev/create-backdated-order', methods=['POST'])
+@admin_required
+def create_stale_order():
+    global order_id_counter
+    data = request.get_json()
+    created_time = datetime.utcnow() - timedelta(hours=2)
+    order = {
+        "id": order_id_counter,
+        "user_id": data["user_id"],
+        "items": data["items"],
+        "total": data["total"],
+        "shipping": data["shipping"],
+        "payment_status": "Pending",
+        "payment_confirmation": None,
+        "created_at": created_time.isoformat(),
+        "status_history": [
+            {"status": "Pending", "timestamp": created_time.isoformat()}
+        ],
+        "placed_by": get_jwt_identity()["username"]
+    }
+    orders.append(order)
+    order_id_counter += 1
+    return jsonify({"message": "Backdated order created", "order": order}), 201
+
+@app.route('/api/reset', methods=['GET'])
+@admin_required
+def reset_data():
+    global products, orders, product_id_counter, order_id_counter
+    products = []
+    orders = []
+    product_id_counter = 1
+    order_id_counter = 1
+    return jsonify({"message": "All data reset successfully"})
+
+@app.route('/api/export', methods=['GET'])
+@admin_required
+def export_data():
+    return jsonify({"products": products, "orders": orders})
+
 if __name__ == '__main__':
     app.run(debug=True)
-
