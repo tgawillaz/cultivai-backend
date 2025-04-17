@@ -21,6 +21,8 @@ USERS = {
     "admin": {"password": "adminpass", "role": "admin"}
 }
 
+ALLOWED_PAYMENT_METHODS = ["CashApp", "Venmo", "PayPal"]
+
 def authenticate(username, password):
     user = USERS.get(username)
     return user and user["password"] == password
@@ -133,16 +135,10 @@ def update_order_status(id):
     order = next((o for o in orders if o["id"] == id), None)
     if not order:
         return jsonify({"error": "Order not found"}), 404
-
     timestamp = datetime.utcnow().isoformat()
     order["payment_status"] = new_status
-    order.setdefault("status_history", []).append({
-        "status": new_status,
-        "timestamp": timestamp
-    })
-
+    order.setdefault("status_history", []).append({"status": new_status, "timestamp": timestamp})
     print(f"[Webhook] Order {id} status changed to {new_status} at {timestamp}")
-
     return jsonify({"message": "Order status updated", "order": order}), 200
 
 @app.route('/api/order', methods=['POST'])
@@ -177,6 +173,8 @@ def confirm_payment():
     order_id = data.get("order_id")
     screenshot_url = data.get("screenshot_url")
     method = data.get("payment_method")
+    if method not in ALLOWED_PAYMENT_METHODS:
+        return jsonify({"error": f"Invalid payment method. Must be one of: {ALLOWED_PAYMENT_METHODS}"}), 400
     order = next((o for o in orders if o["id"] == order_id), None)
     if not order:
         return jsonify({"error": "Order not found"}), 404
@@ -188,6 +186,10 @@ def confirm_payment():
         "submitted_at": datetime.utcnow().isoformat()
     }
     order["payment_status"] = "Under Review"
+    order.setdefault("status_history", []).append({
+        "status": "Under Review",
+        "timestamp": datetime.utcnow().isoformat()
+    })
     return jsonify({"message": "Payment confirmation submitted", "order": order}), 200
 
 @app.route('/api/ai/review-payment', methods=['POST'])
@@ -205,15 +207,8 @@ def review_payment_screenshot():
     order["payment_status"] = "Paid" if approved else "Rejected"
     order["reviewed_by"] = "CultivAi"
     order["reviewed_at"] = datetime.utcnow().isoformat()
-    order.setdefault("status_history", []).append({
-        "status": order["payment_status"],
-        "timestamp": order["reviewed_at"]
-    })
-    return jsonify({
-        "message": "Payment reviewed automatically",
-        "order_id": order_id,
-        "status": order["payment_status"]
-    }), 200
+    order.setdefault("status_history", []).append({"status": order["payment_status"], "timestamp": order["reviewed_at"]})
+    return jsonify({"message": "Payment reviewed automatically", "order_id": order_id, "status": order["payment_status"]}), 200
 
 @app.route('/api/reset', methods=['GET'])
 @admin_required
@@ -241,10 +236,7 @@ def cancel_stale_orders():
             if now - created_time > timedelta(hours=1):
                 order["payment_status"] = "Canceled"
                 order["canceled_at"] = now.isoformat()
-                order.setdefault("status_history", []).append({
-                    "status": "Canceled",
-                    "timestamp": now.isoformat()
-                })
+                order.setdefault("status_history", []).append({"status": "Canceled", "timestamp": now.isoformat()})
                 expired += 1
     return jsonify({"message": f"{expired} stale orders canceled"}), 200
 
