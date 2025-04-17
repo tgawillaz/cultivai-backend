@@ -1,169 +1,71 @@
-from flask import Flask, request, jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
-from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
-from werkzeug.utils import secure_filename
-from datetime import datetime, timedelta
-import os
-import uuid
+from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)
-app.config['JWT_SECRET_KEY'] = 'super-secret'
-app.config['UPLOAD_FOLDER'] = 'uploads'
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-jwt = JWTManager(app)
+products = []
+orders = []
 
-# In-memory storage
-data = {
-    "products": {},
-    "orders": {},
-    "users": {
-        "admin": {"password": "password", "role": "admin"},
-        "user": {"password": "password", "role": "user"},
-    }
-}
-
-@app.route('/api/login', methods=['POST'])
-def login():
-    credentials = request.get_json()
-    username = credentials.get('username')
-    password = credentials.get('password')
-    user = data['users'].get(username)
-    if user and user['password'] == password:
-        token = create_access_token(identity={"username": username, "role": user['role']}, expires_delta=timedelta(hours=1))
-        return jsonify(token=token)
-    return jsonify(error="Invalid credentials"), 401
-
-@app.route('/api/health', methods=['GET'])
-def health():
-    return jsonify(message="Backend is healthy"), 200
-
-@app.route('/api/product', methods=['POST'])
-@jwt_required()
+@app.route("/api/product", methods=["POST"])
 def create_product():
-    user = get_jwt_identity()
-    if user['role'] != 'admin':
-        return jsonify(error="Admins only"), 403
-    product = request.get_json()
-    product_id = len(data['products']) + 1
-    product['id'] = product_id
-    product['created_by'] = user['username']
-    data['products'][product_id] = product
-    return jsonify(message="Product added successfully", product=product), 201
+    data = request.get_json()
+    product = {
+        "id": len(products) + 1,
+        "name": data.get("name"),
+        "price": data.get("price"),
+        "stock": data.get("stock"),
+        "image": data.get("image"),
+        "description": data.get("description"),
+        "created_by": data.get("created_by", "admin")
+    }
+    products.append(product)
+    return jsonify({"message": "Product added successfully", "product": product}), 201
 
-@app.route('/api/order', methods=['POST'])
-@jwt_required()
+@app.route("/api/product", methods=["GET"])
+def get_all_products():
+    return jsonify(products), 200
+
+@app.route("/api/order", methods=["POST"])
 def place_order():
-    user = get_jwt_identity()
-    body = request.get_json()
-    order_id = len(data['orders']) + 1
+    data = request.get_json()
     order = {
-        "id": order_id,
-        "user_id": 1,
-        "items": body['items'],
-        "total": body['total'],
-        "shipping": body['shipping'],
-        "payment_status": "Pending",
-        "payment_confirmation": None,
+        "id": len(orders) + 1,
+        "product_id": data.get("product_id"),
+        "quantity": data.get("quantity"),
+        "customer_name": data.get("customer_name"),
+        "status": "pending",
         "created_at": datetime.utcnow().isoformat(),
-        "placed_by": user['username'],
-        "status_history": [{"status": "Pending", "timestamp": datetime.utcnow().isoformat()}]
+        "status_history": [
+            {"status": "pending", "timestamp": datetime.utcnow().isoformat()}
+        ]
     }
-    data['orders'][order_id] = order
-    return jsonify(message="Order placed successfully", order=order)
+    orders.append(order)
+    return jsonify(order), 200
 
-@app.route('/api/order/<int:order_id>', methods=['PUT'])
-@jwt_required()
-def edit_order(order_id):
-    user = get_jwt_identity()
-    order = data['orders'].get(order_id)
-    if not order:
-        return jsonify(error="Order not found"), 404
-    if order['placed_by'] != user['username']:
-        return jsonify(error="Unauthorized"), 403
-    body = request.get_json()
-    if order['payment_status'] != "Pending":
-        return jsonify(error="Only pending orders can be edited"), 400
-    order['items'] = body.get('items', order['items'])
-    order['total'] = body.get('total', order['total'])
-    order['shipping'] = body.get('shipping', order['shipping'])
-    return jsonify(message="Order updated", order=order)
+@app.route("/api/order/<int:order_id>/status-history", methods=["GET"])
+def get_order_status_history(order_id):
+    for order in orders:
+        if order["id"] == order_id:
+            return jsonify(order["status_history"]), 200
+    return jsonify({"error": "Order not found"}), 404
 
-@app.route('/api/order/<int:order_id>', methods=['DELETE'])
-@jwt_required()
-def cancel_order(order_id):
-    user = get_jwt_identity()
-    order = data['orders'].get(order_id)
-    if not order:
-        return jsonify(error="Order not found"), 404
-    if order['placed_by'] != user['username']:
-        return jsonify(error="Unauthorized"), 403
-    if order['payment_status'] != "Pending":
-        return jsonify(error="Only pending orders can be canceled"), 400
-    order['payment_status'] = "Canceled"
-    order['status_history'].append({"status": "Canceled", "timestamp": datetime.utcnow().isoformat()})
-    return jsonify(message="Order canceled", order=order)
+@app.route("/api/reset", methods=["GET"])
+def reset_data():
+    products.clear()
+    orders.clear()
+    return jsonify({"message": "All data has been reset."}), 200
 
-@app.route('/api/payment/upload', methods=['POST'])
-@jwt_required()
-def upload_payment():
-    user = get_jwt_identity()
-    order_id = request.form.get('order_id')
-    method = request.form.get('method')
-    file = request.files.get('screenshot')
-    if not file or not order_id or not method:
-        return jsonify(error="Missing required fields"), 400
+@app.route("/api/export", methods=["GET"])
+def export_data():
+    return jsonify({"products": products, "orders": orders}), 200
 
-    order = data['orders'].get(int(order_id))
-    if not order:
-        return jsonify(error="Order not found"), 404
+@app.route("/api/login", methods=["POST"])
+def login():
+    return jsonify({
+        "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
+    }), 200
 
-    filename = secure_filename(file.filename)
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    file.save(filepath)
-
-    order['payment_confirmation'] = {
-        "method": method,
-        "screenshot_path": filepath,
-        "submitted_at": datetime.utcnow().isoformat(),
-        "submitted_by": user['username']
-    }
-    order['payment_status'] = "Under Review"
-    order['status_history'].append({"status": "Under Review", "timestamp": datetime.utcnow().isoformat()})
-
-    # Auto-review mock logic
-    if "valid" in filename.lower():
-        order['payment_status'] = "Approved"
-        order['status_history'].append({"status": "Approved", "timestamp": datetime.utcnow().isoformat()})
-    elif "fake" in filename.lower():
-        order['payment_status'] = "Rejected"
-        order['status_history'].append({"status": "Rejected", "timestamp": datetime.utcnow().isoformat()})
-
-    return jsonify(message="Payment uploaded", order=order)
-
-@app.route('/api/order/<int:order_id>/status-history', methods=['GET'])
-@jwt_required()
-def status_history(order_id):
-    order = data['orders'].get(order_id)
-    if not order:
-        return jsonify(error="Order not found"), 404
-    return jsonify(order['status_history'])
-
-@app.route('/api/orders', methods=['GET'])
-@jwt_required()
-def get_orders():
-    return jsonify(list(data['orders'].values()))
-
-@app.route('/api/reset', methods=['GET'])
-def reset():
-    data['products'] = {}
-    data['orders'] = {}
-    return jsonify(message="All data reset successfully")
-
-@app.route('/api/export', methods=['GET'])
-def export():
-    return jsonify({"products": list(data['products'].values()), "orders": list(data['orders'].values())})
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     app.run(debug=True)
