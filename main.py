@@ -1,12 +1,17 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
+from werkzeug.utils import secure_filename
 from datetime import datetime, timedelta
+import os
 import uuid
 
 app = Flask(__name__)
 CORS(app)
-app.config['JWT_SECRET_KEY'] = 'super-secret'  # Replace in production
+app.config['JWT_SECRET_KEY'] = 'super-secret'
+app.config['UPLOAD_FOLDER'] = 'uploads'
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+
 jwt = JWTManager(app)
 
 # In-memory storage
@@ -100,39 +105,42 @@ def cancel_order(order_id):
     order['status_history'].append({"status": "Canceled", "timestamp": datetime.utcnow().isoformat()})
     return jsonify(message="Order canceled", order=order)
 
-@app.route('/api/payment', methods=['POST'])
+@app.route('/api/payment/upload', methods=['POST'])
 @jwt_required()
-def confirm_payment():
-    body = request.get_json()
-    order = data['orders'].get(body['order_id'])
-    if not order:
-        return jsonify(error="Order not found"), 404
-    order['payment_confirmation'] = {
-        "method": body['method'],
-        "screenshot_url": body['screenshot_url'],
-        "submitted_at": datetime.utcnow().isoformat(),
-        "submitted_by": get_jwt_identity()['username']
-    }
-    order['payment_status'] = "Under Review"
-    order['status_history'].append({"status": "Under Review", "timestamp": datetime.utcnow().isoformat()})
-    return jsonify(message="Payment submitted", order=order)
+def upload_payment():
+    user = get_jwt_identity()
+    order_id = request.form.get('order_id')
+    method = request.form.get('method')
+    file = request.files.get('screenshot')
+    if not file or not order_id or not method:
+        return jsonify(error="Missing required fields"), 400
 
-@app.route('/api/payment/resubmit', methods=['POST'])
-@jwt_required()
-def resubmit_payment():
-    body = request.get_json()
-    order = data['orders'].get(body['order_id'])
+    order = data['orders'].get(int(order_id))
     if not order:
         return jsonify(error="Order not found"), 404
+
+    filename = secure_filename(file.filename)
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    file.save(filepath)
+
     order['payment_confirmation'] = {
-        "method": body['method'],
-        "screenshot_url": body['screenshot_url'],
+        "method": method,
+        "screenshot_path": filepath,
         "submitted_at": datetime.utcnow().isoformat(),
-        "submitted_by": get_jwt_identity()['username']
+        "submitted_by": user['username']
     }
     order['payment_status'] = "Under Review"
     order['status_history'].append({"status": "Under Review", "timestamp": datetime.utcnow().isoformat()})
-    return jsonify(message="Payment resubmission accepted", order=order)
+
+    # Auto-review mock logic
+    if "valid" in filename.lower():
+        order['payment_status'] = "Approved"
+        order['status_history'].append({"status": "Approved", "timestamp": datetime.utcnow().isoformat()})
+    elif "fake" in filename.lower():
+        order['payment_status'] = "Rejected"
+        order['status_history'].append({"status": "Rejected", "timestamp": datetime.utcnow().isoformat()})
+
+    return jsonify(message="Payment uploaded", order=order)
 
 @app.route('/api/order/<int:order_id>/status-history', methods=['GET'])
 @jwt_required()
