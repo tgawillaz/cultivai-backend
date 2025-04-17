@@ -261,5 +261,31 @@ def cancel_stale_orders():
                 expired += 1
     return jsonify({"message": f"{expired} stale orders canceled"}), 200
 
+@app.route('/api/ai/review-payment', methods=['POST'])
+@admin_required
+def review_payment_screenshot():
+    data = request.get_json()
+    order_id = data.get("order_id")
+
+    order = next((o for o in orders if o["id"] == order_id), None)
+    if not order:
+        return jsonify({"error": "Order not found"}), 404
+
+    if not order.get("payment_confirmation") or not order["payment_confirmation"].get("screenshot_url"):
+        return jsonify({"error": "No screenshot submitted"}), 400
+
+    amount = order.get("total", 0)
+    approved = amount < 100  # <— mock approval logic
+
+    order["payment_status"] = "Paid" if approved else "Rejected"
+    order["reviewed_by"] = "CultivAi"
+    order["reviewed_at"] = datetime.utcnow().isoformat()
+
+    return jsonify({
+        "message": "Payment reviewed automatically",
+        "order_id": order_id,
+        "status": order["payment_status"]
+    }), 200
+
 if __name__ == "__main__":
     app.run(debug=True)
