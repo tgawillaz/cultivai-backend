@@ -11,7 +11,6 @@ app.config["JWT_SECRET_KEY"] = "super-secret"
 jwt = JWTManager(app)
 INTERNAL_SECRET_KEY = "secret_key"
 
-# In-memory storage
 products = []
 orders = []
 product_id_counter = 1
@@ -36,7 +35,6 @@ def admin_required(fn):
     wrapper.__name__ = fn.__name__
     return wrapper
 
-@app.route("/")
 @app.route("/api/health")
 def health():
     return jsonify({"status": "CultivAi backend is live"})
@@ -115,6 +113,38 @@ def delete_product(id):
         return jsonify({"message": f"Product {id} deleted successfully"}), 200
     return jsonify({"error": "Product not found"}), 404
 
+@app.route('/api/orders', methods=['GET'])
+@admin_required
+def get_all_orders():
+    return jsonify(orders), 200
+
+@app.route('/api/me/orders', methods=['GET'])
+@jwt_required()
+def get_my_orders():
+    current_user = get_jwt_identity()["username"]
+    my_orders = [o for o in orders if o["placed_by"] == current_user]
+    return jsonify(my_orders), 200
+
+@app.route('/api/order/<int:id>/status', methods=['PATCH'])
+@admin_required
+def update_order_status(id):
+    data = request.get_json()
+    new_status = data.get("status")
+    order = next((o for o in orders if o["id"] == id), None)
+    if not order:
+        return jsonify({"error": "Order not found"}), 404
+
+    timestamp = datetime.utcnow().isoformat()
+    order["payment_status"] = new_status
+    order.setdefault("status_history", []).append({
+        "status": new_status,
+        "timestamp": timestamp
+    })
+
+    print(f"[Webhook] Order {id} status changed to {new_status} at {timestamp}")
+
+    return jsonify({"message": "Order status updated", "order": order}), 200
+
 @app.route('/api/order', methods=['POST'])
 @jwt_required()
 def place_order():
@@ -126,16 +156,14 @@ def place_order():
         "user_id": data.get("user_id"),
         "items": data.get("items"),
         "total": data.get("total"),
-        "shipping": {
-            "name": data.get("shipping", {}).get("name"),
-            "email": data.get("shipping", {}).get("email"),
-            "phone": data.get("shipping", {}).get("phone"),
-            "address": data.get("shipping", {}).get("address")
-        },
+        "shipping": data.get("shipping"),
         "payment_status": "Pending",
         "payment_confirmation": None,
         "placed_by": current_user,
-        "created_at": datetime.utcnow().isoformat()
+        "created_at": datetime.utcnow().isoformat(),
+        "status_history": [
+            {"status": "Pending", "timestamp": datetime.utcnow().isoformat()}
+        ]
     }
     orders.append(order)
     order_id_counter += 1
@@ -149,67 +177,43 @@ def confirm_payment():
     order_id = data.get("order_id")
     screenshot_url = data.get("screenshot_url")
     method = data.get("payment_method")
-
     order = next((o for o in orders if o["id"] == order_id), None)
     if not order:
         return jsonify({"error": "Order not found"}), 404
-
     if order["placed_by"] != current_user and get_jwt_identity()["role"] != "admin":
         return jsonify({"error": "Unauthorized"}), 403
-
     order["payment_confirmation"] = {
         "screenshot_url": screenshot_url,
         "method": method,
         "submitted_at": datetime.utcnow().isoformat()
     }
     order["payment_status"] = "Under Review"
-
     return jsonify({"message": "Payment confirmation submitted", "order": order}), 200
 
-@app.route('/api/order/<int:id>', methods=['GET'])
-def get_order(id):
-    order = next((o for o in orders if o["id"] == id), None)
-    if order:
-        return jsonify(order)
-    return jsonify({"error": "Order not found"}), 404
-
-@app.route('/api/orders/user/<int:user_id>', methods=['GET'])
-def get_user_orders(user_id):
-    user_orders = [o for o in orders if o["user_id"] == user_id]
-    return jsonify(user_orders)
-
-@app.route('/api/order/<int:id>', methods=['DELETE'])
-@jwt_required()
-def delete_order(id):
-    global orders
-    current_user = get_jwt_identity()
-    order = next((o for o in orders if o["id"] == id), None)
-    if not order:
-        return jsonify({"error": "Order not found"}), 404
-
-    if current_user["role"] != "admin" and order["placed_by"] != current_user["username"]:
-        return jsonify({"error": "Unauthorized"}), 403
-
-    orders.remove(order)
-    return jsonify({"message": f"Order {id} deleted successfully"}), 200
-
-@app.route('/api/payment', methods=['POST'])
-@jwt_required()
-def process_payment():
-    current_user = get_jwt_identity()["username"]
+@app.route('/api/ai/review-payment', methods=['POST'])
+@admin_required
+def review_payment_screenshot():
     data = request.get_json()
     order_id = data.get("order_id")
-    payment_status = data.get("payment_status")
     order = next((o for o in orders if o["id"] == order_id), None)
-    if order:
-        order["payment_status"] = payment_status
-        order["payment_processed_by"] = current_user
-        return jsonify({
-            "message": "Payment processed successfully",
-            "order_id": order_id,
-            "payment_status": payment_status
-        }), 200
-    return jsonify({"error": "Order not found"}), 404
+    if not order:
+        return jsonify({"error": "Order not found"}), 404
+    if not order.get("payment_confirmation") or not order["payment_confirmation"].get("screenshot_url"):
+        return jsonify({"error": "No screenshot submitted"}), 400
+    amount = order.get("total", 0)
+    approved = amount < 100
+    order["payment_status"] = "Paid" if approved else "Rejected"
+    order["reviewed_by"] = "CultivAi"
+    order["reviewed_at"] = datetime.utcnow().isoformat()
+    order.setdefault("status_history", []).append({
+        "status": order["payment_status"],
+        "timestamp": order["reviewed_at"]
+    })
+    return jsonify({
+        "message": "Payment reviewed automatically",
+        "order_id": order_id,
+        "status": order["payment_status"]
+    }), 200
 
 @app.route('/api/reset', methods=['GET'])
 @admin_required
@@ -224,28 +228,7 @@ def reset_data():
 @app.route('/api/export', methods=['GET'])
 @admin_required
 def export_data():
-    return jsonify({
-        "products": products,
-        "orders": orders
-    }), 200
-
-@app.route('/api/orders/unpaid', methods=['GET'])
-@admin_required
-def get_unpaid_orders():
-    unpaid = [o for o in orders if o["payment_status"] == "Pending"]
-    return jsonify({"unpaid_orders": unpaid}), 200
-
-@app.route('/api/order/<int:id>/cancel', methods=['POST'])
-@admin_required
-def cancel_order(id):
-    order = next((o for o in orders if o["id"] == id), None)
-    if not order:
-        return jsonify({"error": "Order not found"}), 404
-    if order["payment_status"] != "Pending":
-        return jsonify({"error": "Only pending orders can be canceled"}), 400
-    order["payment_status"] = "Canceled"
-    order["canceled_at"] = datetime.utcnow().isoformat()
-    return jsonify({"message": f"Order {id} canceled", "order": order}), 200
+    return jsonify({"products": products, "orders": orders}), 200
 
 @app.route('/api/cron/cancel-stale-orders', methods=['GET'])
 @admin_required
@@ -258,34 +241,12 @@ def cancel_stale_orders():
             if now - created_time > timedelta(hours=1):
                 order["payment_status"] = "Canceled"
                 order["canceled_at"] = now.isoformat()
+                order.setdefault("status_history", []).append({
+                    "status": "Canceled",
+                    "timestamp": now.isoformat()
+                })
                 expired += 1
     return jsonify({"message": f"{expired} stale orders canceled"}), 200
-
-@app.route('/api/ai/review-payment', methods=['POST'])
-@admin_required
-def review_payment_screenshot():
-    data = request.get_json()
-    order_id = data.get("order_id")
-
-    order = next((o for o in orders if o["id"] == order_id), None)
-    if not order:
-        return jsonify({"error": "Order not found"}), 404
-
-    if not order.get("payment_confirmation") or not order["payment_confirmation"].get("screenshot_url"):
-        return jsonify({"error": "No screenshot submitted"}), 400
-
-    amount = order.get("total", 0)
-    approved = amount < 100  # <— mock approval logic
-
-    order["payment_status"] = "Paid" if approved else "Rejected"
-    order["reviewed_by"] = "CultivAi"
-    order["reviewed_at"] = datetime.utcnow().isoformat()
-
-    return jsonify({
-        "message": "Payment reviewed automatically",
-        "order_id": order_id,
-        "status": order["payment_status"]
-    }), 200
 
 if __name__ == "__main__":
     app.run(debug=True)
