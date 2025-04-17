@@ -1,8 +1,9 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from datetime import datetime, timedelta
 import jwt as pyjwt
+import os
 
 app = Flask(__name__)
 CORS(app)
@@ -15,6 +16,8 @@ products = []
 orders = []
 product_id_counter = 1
 order_id_counter = 1
+UPLOAD_FOLDER = "uploads"
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 USERS = {
     "user": {"password": "password", "role": "user"},
@@ -115,32 +118,6 @@ def delete_product(id):
         return jsonify({"message": f"Product {id} deleted successfully"}), 200
     return jsonify({"error": "Product not found"}), 404
 
-@app.route('/api/orders', methods=['GET'])
-@admin_required
-def get_all_orders():
-    return jsonify(orders), 200
-
-@app.route('/api/me/orders', methods=['GET'])
-@jwt_required()
-def get_my_orders():
-    current_user = get_jwt_identity()["username"]
-    my_orders = [o for o in orders if o["placed_by"] == current_user]
-    return jsonify(my_orders), 200
-
-@app.route('/api/order/<int:id>/status', methods=['PATCH'])
-@admin_required
-def update_order_status(id):
-    data = request.get_json()
-    new_status = data.get("status")
-    order = next((o for o in orders if o["id"] == id), None)
-    if not order:
-        return jsonify({"error": "Order not found"}), 404
-    timestamp = datetime.utcnow().isoformat()
-    order["payment_status"] = new_status
-    order.setdefault("status_history", []).append({"status": new_status, "timestamp": timestamp})
-    print(f"[Webhook] Order {id} status changed to {new_status} at {timestamp}")
-    return jsonify({"message": "Order status updated", "order": order}), 200
-
 @app.route('/api/order', methods=['POST'])
 @jwt_required()
 def place_order():
@@ -187,6 +164,7 @@ def confirm_payment():
     }
     order["payment_status"] = "Under Review"
     order.setdefault("status_history", []).append({"status": "Under Review", "timestamp": datetime.utcnow().isoformat()})
+    print(f"[Alert] Payment submitted for Order {order_id} via {method}")
     return jsonify({"message": "Payment confirmation submitted", "order": order}), 200
 
 @app.route('/api/payment-resubmit', methods=['POST'])
@@ -213,6 +191,7 @@ def resubmit_payment():
     }
     order["payment_status"] = "Under Review"
     order.setdefault("status_history", []).append({"status": "Under Review", "timestamp": datetime.utcnow().isoformat()})
+    print(f"[Alert] Payment resubmitted for Order {order_id} via {method}")
     return jsonify({"message": "Payment resubmission accepted", "order": order}), 200
 
 @app.route('/api/ai/review-payment', methods=['POST'])
@@ -231,7 +210,16 @@ def review_payment_screenshot():
     order["reviewed_by"] = "CultivAi"
     order["reviewed_at"] = datetime.utcnow().isoformat()
     order.setdefault("status_history", []).append({"status": order["payment_status"], "timestamp": order["reviewed_at"]})
+    print(f"[Alert] Payment for Order {order_id} auto-reviewed: {order['payment_status']}")
     return jsonify({"message": "Payment reviewed automatically", "order_id": order_id, "status": order["payment_status"]}), 200
+
+@app.route('/api/order/<int:id>/receipt', methods=['GET'])
+@jwt_required()
+def order_receipt(id):
+    order = next((o for o in orders if o["id"] == id), None)
+    if not order:
+        return jsonify({"error": "Order not found"}), 404
+    return jsonify({"receipt": order}), 200
 
 @app.route('/api/reset', methods=['GET'])
 @admin_required
@@ -247,21 +235,6 @@ def reset_data():
 @admin_required
 def export_data():
     return jsonify({"products": products, "orders": orders}), 200
-
-@app.route('/api/cron/cancel-stale-orders', methods=['GET'])
-@admin_required
-def cancel_stale_orders():
-    now = datetime.utcnow()
-    expired = 0
-    for order in orders:
-        if order["payment_status"] == "Pending":
-            created_time = datetime.fromisoformat(order["created_at"])
-            if now - created_time > timedelta(hours=1):
-                order["payment_status"] = "Canceled"
-                order["canceled_at"] = now.isoformat()
-                order.setdefault("status_history", []).append({"status": "Canceled", "timestamp": now.isoformat()})
-                expired += 1
-    return jsonify({"message": f"{expired} stale orders canceled"}), 200
 
 @app.route('/api/dev/create-backdated-order', methods=['GET'])
 @admin_required
@@ -290,5 +263,5 @@ def create_backdated_order():
     order_id_counter += 1
     return jsonify({"message": "Backdated test order created", "order": order}), 201
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     app.run(debug=True)
