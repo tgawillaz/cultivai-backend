@@ -4,16 +4,23 @@ from flask_cors import CORS
 import os
 
 app = Flask(__name__)
-CORS(app)
+CORS(app)  # Enable CORS for all routes
 
-# Supabase credentials
-SUPABASE_URL = "https://your-project.supabase.co"
-SUPABASE_KEY = "your-anon-or-service-role-key"
+# Supabase credentials from environment variables (more secure!)
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise Exception("Missing SUPABASE_URL or SUPABASE_KEY environment variables.")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# -------------------- PRODUCT ROUTES --------------------
+# -------------------- HEALTH CHECK --------------------
+@app.route("/")
+def health():
+    return jsonify({"status": "CultivAi backend is live!"})
 
+# -------------------- PRODUCT ROUTES --------------------
 @app.route("/api/products", methods=["GET"])
 def get_products():
     try:
@@ -39,7 +46,6 @@ def add_product():
         return jsonify({"error": str(e)}), 500
 
 # -------------------- ORDER ROUTES --------------------
-
 @app.route("/api/order", methods=["POST"])
 def place_order():
     data = request.json
@@ -62,7 +68,15 @@ def get_status_history(order_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# -------------------- MAIN --------------------
+# -------------------- TEST DB --------------------
+@app.route("/test-db")
+def test_db():
+    try:
+        data = supabase.table("your_table_name").select("*").limit(1).execute()
+        return jsonify(data.data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
+# -------------------- MAIN --------------------
 if __name__ == "__main__":
     app.run(debug=True)
