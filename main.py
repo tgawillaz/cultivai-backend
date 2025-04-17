@@ -55,25 +55,19 @@ def login():
         return jsonify({"token": access_token})
     return jsonify({"error": "Invalid credentials"}), 401
 
-@app.route('/api/logout', methods=['POST'])
-def logout():
-    return jsonify({"message": "Logout successful — delete token client-side."})
-
 @app.route('/api/product', methods=['POST'])
 @admin_required
-def add_product():
+def create_product():
     global product_id_counter
-    current_user = get_jwt_identity()["username"]
     data = request.get_json()
     product = {
         "id": product_id_counter,
-        "name": data.get("name"),
-        "description": data.get("description"),
-        "price": data.get("price"),
-        "image": data.get("image"),
-        "stock": data.get("stock"),
-        "created_by": current_user,
-        "created_at": datetime.utcnow().isoformat()
+        "name": data["name"],
+        "description": data["description"],
+        "price": data["price"],
+        "image": data["image"],
+        "stock": data["stock"],
+        "created_by": get_jwt_identity()["username"]
     }
     products.append(product)
     product_id_counter += 1
@@ -83,60 +77,31 @@ def add_product():
 def get_products():
     return jsonify(products)
 
-@app.route('/api/product/<int:id>', methods=['GET'])
-def get_product(id):
-    product = next((p for p in products if p["id"] == id), None)
+@app.route('/api/product/<int:product_id>', methods=['GET'])
+def get_product(product_id):
+    product = next((p for p in products if p["id"] == product_id), None)
     if product:
         return jsonify(product)
     return jsonify({"error": "Product not found"}), 404
 
-@app.route('/api/product/<int:id>', methods=['POST'])
-@admin_required
-def update_product(id):
-    current_user = get_jwt_identity()["username"]
-    data = request.get_json()
-    product = next((p for p in products if p["id"] == id), None)
-    if product:
-        product.update({
-            "name": data.get("name"),
-            "description": data.get("description"),
-            "price": data.get("price"),
-            "image": data.get("image"),
-            "stock": data.get("stock"),
-            "updated_by": current_user
-        })
-        return jsonify({"message": "Product updated successfully", "product": product}), 200
-    return jsonify({"error": "Product not found"}), 404
-
-@app.route('/api/product/<int:id>', methods=['DELETE'])
-@admin_required
-def delete_product(id):
-    global products
-    original_len = len(products)
-    products = [p for p in products if p["id"] != id]
-    if len(products) < original_len:
-        return jsonify({"message": f"Product {id} deleted successfully"}), 200
-    return jsonify({"error": "Product not found"}), 404
-
 @app.route('/api/order', methods=['POST'])
 @jwt_required()
-def place_order():
+def create_order():
     global order_id_counter
-    current_user = get_jwt_identity()["username"]
     data = request.get_json()
     order = {
         "id": order_id_counter,
-        "user_id": data.get("user_id"),
-        "items": data.get("items"),
-        "total": data.get("total"),
-        "shipping": data.get("shipping"),
+        "user_id": data["user_id"],
+        "items": data["items"],
+        "total": data["total"],
+        "shipping": data["shipping"],
         "payment_status": "Pending",
         "payment_confirmation": None,
-        "placed_by": current_user,
         "created_at": datetime.utcnow().isoformat(),
         "status_history": [
             {"status": "Pending", "timestamp": datetime.utcnow().isoformat()}
-        ]
+        ],
+        "placed_by": get_jwt_identity()["username"]
     }
     orders.append(order)
     order_id_counter += 1
@@ -213,13 +178,23 @@ def review_payment_screenshot():
     print(f"[Alert] Payment for Order {order_id} auto-reviewed: {order['payment_status']}")
     return jsonify({"message": "Payment reviewed automatically", "order_id": order_id, "status": order["payment_status"]}), 200
 
-@app.route('/api/order/<int:id>/receipt', methods=['GET'])
+@app.route('/api/order/<int:order_id>/receipt', methods=['GET'])
 @jwt_required()
-def order_receipt(id):
-    order = next((o for o in orders if o["id"] == id), None)
+def order_receipt(order_id):
+    order = next((o for o in orders if o["id"] == order_id), None)
     if not order:
         return jsonify({"error": "Order not found"}), 404
     return jsonify({"receipt": order}), 200
+
+@app.route('/api/orders', methods=['GET'])
+@admin_required
+def get_all_orders():
+    return jsonify(orders)
+
+@app.route('/api/export', methods=['GET'])
+@admin_required
+def export_data():
+    return jsonify({"products": products, "orders": orders})
 
 @app.route('/api/reset', methods=['GET'])
 @admin_required
@@ -229,39 +204,26 @@ def reset_data():
     orders = []
     product_id_counter = 1
     order_id_counter = 1
-    return jsonify({"message": "All data reset successfully"}), 200
+    return jsonify({"message": "All data reset successfully"})
 
-@app.route('/api/export', methods=['GET'])
+@app.route('/api/order/<int:order_id>/status', methods=['PATCH'])
 @admin_required
-def export_data():
-    return jsonify({"products": products, "orders": orders}), 200
-
-@app.route('/api/dev/create-backdated-order', methods=['GET'])
-@admin_required
-def create_backdated_order():
-    global order_id_counter
-    order = {
-        "id": order_id_counter,
-        "user_id": 1,
-        "items": [{"product_id": 1, "quantity": 1}],
-        "total": 42,
-        "shipping": {
-            "name": "Backdated Test",
-            "email": "test@dev.com",
-            "phone": "000-000-0000",
-            "address": "Fake Lane 123"
-        },
-        "payment_status": "Pending",
-        "payment_confirmation": None,
-        "placed_by": "admin",
-        "created_at": (datetime.utcnow() - timedelta(hours=2)).isoformat(),
-        "status_history": [
-            {"status": "Pending", "timestamp": (datetime.utcnow() - timedelta(hours=2)).isoformat()}
-        ]
-    }
-    orders.append(order)
-    order_id_counter += 1
-    return jsonify({"message": "Backdated test order created", "order": order}), 201
+def update_order_status(order_id):
+    data = request.get_json()
+    new_status = data.get("status")
+    order = next((o for o in orders if o["id"] == order_id), None)
+    if not order:
+        return jsonify({"error": "Order not found"}), 404
+    if new_status not in ["Pending", "Paid", "Rejected", "Under Review", "Canceled"]:
+        return jsonify({"error": "Invalid status"}), 400
+    order["payment_status"] = new_status
+    order.setdefault("status_history", []).append({
+        "status": new_status,
+        "timestamp": datetime.utcnow().isoformat()
+    })
+    print(f"[Alert] Order {order_id} manually updated to: {new_status}")
+    return jsonify({"message": f"Order {order_id} updated", "order": order}), 200
 
 if __name__ == '__main__':
     app.run(debug=True)
+
