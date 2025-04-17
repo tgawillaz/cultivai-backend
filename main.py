@@ -186,11 +186,34 @@ def confirm_payment():
         "submitted_at": datetime.utcnow().isoformat()
     }
     order["payment_status"] = "Under Review"
-    order.setdefault("status_history", []).append({
-        "status": "Under Review",
-        "timestamp": datetime.utcnow().isoformat()
-    })
+    order.setdefault("status_history", []).append({"status": "Under Review", "timestamp": datetime.utcnow().isoformat()})
     return jsonify({"message": "Payment confirmation submitted", "order": order}), 200
+
+@app.route('/api/payment-resubmit', methods=['POST'])
+@jwt_required()
+def resubmit_payment():
+    data = request.get_json()
+    current_user = get_jwt_identity()["username"]
+    order_id = data.get("order_id")
+    method = data.get("payment_method")
+    screenshot_url = data.get("screenshot_url")
+    if method not in ALLOWED_PAYMENT_METHODS:
+        return jsonify({"error": f"Invalid payment method. Must be one of: {ALLOWED_PAYMENT_METHODS}"}), 400
+    order = next((o for o in orders if o["id"] == order_id), None)
+    if not order:
+        return jsonify({"error": "Order not found"}), 404
+    if order["placed_by"] != current_user and get_jwt_identity()["role"] != "admin":
+        return jsonify({"error": "Unauthorized"}), 403
+    if order["payment_status"] != "Rejected":
+        return jsonify({"error": "Only rejected payments can be resubmitted"}), 400
+    order["payment_confirmation"] = {
+        "screenshot_url": screenshot_url,
+        "method": method,
+        "submitted_at": datetime.utcnow().isoformat()
+    }
+    order["payment_status"] = "Under Review"
+    order.setdefault("status_history", []).append({"status": "Under Review", "timestamp": datetime.utcnow().isoformat()})
+    return jsonify({"message": "Payment resubmission accepted", "order": order}), 200
 
 @app.route('/api/ai/review-payment', methods=['POST'])
 @admin_required
