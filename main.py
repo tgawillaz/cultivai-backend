@@ -248,5 +248,32 @@ def cancel_stale_orders():
                 expired += 1
     return jsonify({"message": f"{expired} stale orders canceled"}), 200
 
+@app.route('/api/dev/create-backdated-order', methods=['GET'])
+@admin_required
+def create_backdated_order():
+    global order_id_counter
+    order = {
+        "id": order_id_counter,
+        "user_id": 1,
+        "items": [{"product_id": 1, "quantity": 1}],
+        "total": 42,
+        "shipping": {
+            "name": "Backdated Test",
+            "email": "test@dev.com",
+            "phone": "000-000-0000",
+            "address": "Fake Lane 123"
+        },
+        "payment_status": "Pending",
+        "payment_confirmation": None,
+        "placed_by": "admin",
+        "created_at": (datetime.utcnow() - timedelta(hours=2)).isoformat(),
+        "status_history": [
+            {"status": "Pending", "timestamp": (datetime.utcnow() - timedelta(hours=2)).isoformat()}
+        ]
+    }
+    orders.append(order)
+    order_id_counter += 1
+    return jsonify({"message": "Backdated test order created", "order": order}), 201
+
 if __name__ == "__main__":
     app.run(debug=True)
